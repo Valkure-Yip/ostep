@@ -28,3 +28,71 @@ memory, register
 > HOMEWORK: https://github.com/remzi-arpacidusseau/ostep-homework/tree/master/cpu-intro
 >
 > run [process-run.py](https://github.com/remzi-arpacidusseau/ostep-homework/blob/master/cpu-intro/process-run.py) to understand how cpu arrange process (cpu, I/O) order, and how does it impact cpu and io usage rate
+
+
+
+## process API
+
+Unix process API
+
+`fork()`
+
+`wait()`
+
+ the separation of fork() and exec() is essential in building a **UNIX shell**, because it lets the shell run code after the call to fork() but before the call to exec(); this code can alter the environment of the about-to-be-run program, and thus enables a variety of interesting features to be readily built.
+
+
+
+**ASIDE: KEY PROCESS API TERMS** 
+
+- Each process has a name; in most systems, that name is a number known as a process ID (PID). 
+
+- The fork() system call is used in UNIX systems to create a new process. The creator is called the parent; the newly created process is called the child. As sometimes occurs in real life [J16], the child process is a nearly identical copy of the parent. 
+
+- The wait() system call allows a parent to wait for its child to complete execution. 
+
+- The exec() family of system calls allows a child to break free from its similarity to its parent and execute an entirely new program. 
+
+- A UNIX shell commonly uses fork(), wait(), and exec() to launch user commands; the separation of fork and exec enables features like input/output redirection, pipes, and other cool features, all without changing anything about the programs being run. 
+
+- Process control is available in the form of signals, which can cause jobs to stop, continue, or even terminate. 
+
+- Which processes can be controlled by a particular person is encapsulated in the notion of a user; the operating system allows multiple users onto the system, and ensures users can only control their own processes. - A superuser can control all processes (and indeed do many other things); this role should be assumed infrequently and with caution for security reasons.
+
+
+
+## Limited Direct Execution
+
+Two questions when virtualizing hardware:
+
+1. how to restrict operations, like I/O?
+2. how to stop a process and switch to another process, i.e. time sharing?
+
+### restrict operations - user mode & kernel mode
+
+In **user mode**, applications do not have full access to hardware resources. 
+
+In **kernel mode**, the OS has access to the full resources of the machine.
+
+**trap, return-from-trap**: program execute **trap** instruction to enter kernel mode, and calls **return-from-trap** to go back to user-mode
+
+the processor will push the program counter, flags, and a few other registers onto a per-process kernel stack; the return-fromtrap will pop these values off the stack and resume execution of the usermode program.
+
+**trap table**: initialized on system boot, tells hardware what code to run (the location of **trap-handlers**) on exceptional events
+
+![image-20220825184614377](process.assets/image-20220825184614377.png)
+
+
+
+### switching between process - time sharing
+
+How can the operating system **regain control** of the CPU so that it can switch between processes?
+
+#### cooperative approach
+
+ OS trusts the processes of the system to behave reasonably. 
+
+Most processes, as it turns out, transfer control of the CPU to the OS quite frequently by making **system calls** (e.g. open file, create new process), or make explicit **yield** system call, which does nothing except to transfer control to the OS 
+
+#### non-cooperative approach
+
