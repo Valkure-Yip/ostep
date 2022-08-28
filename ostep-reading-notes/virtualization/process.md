@@ -96,3 +96,19 @@ Most processes, as it turns out, transfer control of the CPU to the OS quite fre
 
 #### non-cooperative approach
 
+**timer interrupt**
+
+when the interrupt is raised, the currently running process is halted, and a pre-configured **interrupt handler** in the OS runs. At this point, the OS has regained control of the CPU
+
+### save & restore context
+
+**scheduler **decides whether to continue running the currently-running process, or switch to a different one
+
+if switch process -> **context switch**
+
+![image-20220828185152906](process.assets/image-20220828185152906.png)
+
+> In this example, Process A is running and then is interrupted by the timer interrupt. The hardware saves its registers (onto its kernel stack) and enters the kernel (switching to kernel mode). In the timer interrupt handler, the OS decides to switch from running Process A to Process B. At that point, it calls the switch() routine, which carefully saves current register values (into the process structure of A), restores the registers of Process B (from its process structure entry), and then switches contexts, specifically by changing the stack pointer to use B’s kernel stack (and not A’s). Finally, the OS returnsfrom-trap, which restores B’s registers and starts running it.
+
+ During interrupt or trap handling, another interrupt occurs: **Concurrency**
+
