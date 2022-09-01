@@ -84,3 +84,18 @@ any policy (such as RR) that is **fair**, i.e., that evenly divides the CPU amon
 
 #### I/O
 
+when I/O starts -> CPU idle -> schedule new job?
+
+when I/O finish -> CPU interrupt -> return to old job?
+
+![image-20220830163425962](CPU Scheduling.assets/image-20220830163425962.png)
+
+> A: 50ms job with a 10ms I/O every 10ms
+>
+> B: 50ms job with no I/O
+>
+> When the first sub-job of A has completed, only B is left, and it begins running. Then a new sub-job of A is submitted, and it preempts B and runs for 10 ms. Doing so allows for **overlap**, with the CPU being used by one process while waiting for the I/O of another process to complete; the system is thus better utilized 
+
+
+
+[todo] homework: scheduler.py
