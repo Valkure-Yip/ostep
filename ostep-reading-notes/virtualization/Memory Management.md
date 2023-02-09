@@ -311,3 +311,65 @@ Swapping some pages from memory to hard disk
 ![image-20230202171511316](Memory Management.assets/image-20230202171511316.png)
 
 > three processes (Proc 0, Proc 1, and Proc 2) are actively sharing physical memory; each of the three, however, only have some of their valid pages in memory, with the rest located in swap space on disk. 
+
+**pesent bit**: in PTE; If the present bit is set to one, it means the page is present in physical memory; if it is set to zero, the page is not in memory but rather on disk somewhere.
+
+**page fault**: Accessing a page that is not in physical memory.
+
+**page-fault handler**： read the disk address of the swapped page from PTE, and issues the request to disk to fetch the page into memory.
+while the I/O is in flight, the process will be in the **blocked** state.
+
+### page fault control flow
+consider the status of both **present bit** & **valid bit**:
+![image-20230207144418893](Memory Management.assets/image-20230207144418893.png)
+
+### Swapping Policy
+
+Goal: minimize cache miss
+
+Disk I/O is very costly
+
+Optimal policy: replaces the page that will be accessed *furthest in the future*
+Simple policy: FIFO, random - not efficient
+
+#### Least-Recently-Used (LRU)
+
+replaces the least-recently-used page
+ ![image-20230207155145917](Memory Management.assets/image-20230207155145917.png)
+
+LRU python code example:
+```python
+# uses a dictionary to store the key-value pairs, and a list to store the keys in order of usage (most recently used to least recently used). When a key is looked up, it is moved to the end of the list to reflect that it was just used. When a new key is added and the cache is already at its capacity, the least recently used key is removed from both the cache and the list.
+
+class LRUCache:
+    def __init__(self, capacity: int):
+        self.capacity = capacity
+        self.cache = {}
+        self.lru_list = []
+        
+    def get(self, key: int) -> int:
+        if key in self.cache:
+            self.lru_list.remove(key)
+            self.lru_list.append(key)
+            return self.cache[key]
+        return -1
+    
+    def put(self, key: int, value: int) -> None:
+        if key in self.cache:
+            self.lru_list.remove(key)
+        elif len(self.cache) >= self.capacity:
+            del self.cache[self.lru_list[0]]
+            self.lru_list.pop(0)
+        self.cache[key] = value
+        self.lru_list.append(key)
+
+```
+
+#### Implementation: Approximating LRU
+
+**use bit**： Whenever a page is referenced (i.e., read or written), the use bit is set by hardware to 1. 
+
+**clock algorithm**: all the pages of the system arranged in a circular list. A clock hand points to some particular page to begin with (it doesn’t really matter which). When a replacement must occur, the OS checks if the currently-pointed to page P has a use bit of 1 or 0. If 1, this implies that page P was recently used and thus is not a good candidate for replacement. Thus, the use bit for P is set to 0 (cleared), and the clock hand is incremented to the next page (P + 1). The algorithm continues until it finds a use bit that is set to 0, and evict this page from cache
+
+**dirty bit**: if the page in memory is modified, it is costly to write it back to disc. 
+Improve: scan for pages that are both unused and clean to evict first; failing to find those, then for unused pages that are dirty, and so forth.
