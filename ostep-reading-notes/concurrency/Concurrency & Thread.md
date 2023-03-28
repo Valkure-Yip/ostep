@@ -1,6 +1,6 @@
 [TOC]
 
-## Concurrency
+## Concurrency & Thread
 
 **thread**: like process, but share the same address space with other threads, can access the same data 
 
@@ -110,6 +110,8 @@ A **critical section** is a piece of code that accesses a shared variable (or mo
 **mutual exclusion** guarantees that if one thread is executing within the critical section, the others will be prevented from doing so.
 
 ## Locks
+
+https://pages.cs.wisc.edu/~remzi/OSTEP/threads-locks.pdf
 
 to execute a series of instructions atomically, in spite of interrupts on a single processor
 
@@ -234,11 +236,11 @@ int FetchAndAdd(int *ptr) {
 
 ### Not to spin
 
-1. Thread runs and  yields CPU if another thread is holding the lock
+1. Thread runs and  **yields** CPU if another thread is holding the lock
 
    Problem: still inefficient if there are many threads contesting; Starvation problem
 
-2. Using queue
+2. Using **queue**
 
    ```c++
    typedef struct __lock_t {
@@ -282,3 +284,232 @@ int FetchAndAdd(int *ptr) {
    `park()` to put a calling thread to sleep, and `unpark(threadID)` to wake a particular thread as designated by threadID
    `guard` is a spin-lock that protects `flag` and queue
 
+## Concurrent Data Structures
+
+https://pages.cs.wisc.edu/~remzi/OSTEP/threads-locks-usage.pdf
+
+### counter
+
+Works, but bad performance: not scalable
+```c++
+typedef struct __counter_t {
+    int value;
+    pthread_mutex_t lock;
+} counter_t;
+
+void init(counter_t *c) {
+    c->value = 0;
+    Pthread_mutex_init(&c->lock, NULL);
+}
+
+void increment(counter_t *c) {
+    Pthread_mutex_lock(&c->lock);
+    c->value++;
+    Pthread_mutex_unlock(&c->lock);
+}
+
+void decrement(counter_t *c) {
+    Pthread_mutex_lock(&c->lock);
+    c->value--;
+    Pthread_mutex_unlock(&c->lock);
+}
+
+int get(counter_t *c) {
+    Pthread_mutex_lock(&c->lock);
+    int rc = c->value;
+    Pthread_mutex_unlock(&c->lock);
+    return rc;
+}
+```
+
+### scalable counter
+
+**approximate counter**
+
+Four local counters (one for each cpu core), and a global counter. One lock for each local counter, and one lock for global counter;
+
+When a thread running on a given core wishes to increment the counter, it increments its local counter; No contention between threads;
+
+the local values are periodically (**Theshold S**) transferred to the global counter, by acquiring the global lock and incrementing it by the local counter’s value; the local counter is then reset to zero;
+
+The smaller S is, the more the counter behaves like the non-scalable counter above; the bigger S is, the more scalable the counter, but the further off the global value might be from the actual count.
+
+![image-20230315163109504](Concurrency & Thread.assets/image-20230315163109504.png)
+
+```c++
+typedef struct __counter_t {
+    int global; // global count
+    pthread_mutex_t glock; // global lock
+    int local[NUMCPUS]; // per-CPU count
+    pthread_mutex_t llock[NUMCPUS]; // ... and locks
+    int threshold; // update frequency
+} counter_t;
+
+// init: record threshold, init locks, init values
+// of all local counts and global count
+void init(counter_t *c, int threshold) {
+    c->threshold = threshold;
+    c->global = 0;
+    pthread_mutex_init(&c->glock, NULL);
+    int i;
+    for (i = 0; i < NUMCPUS; i++) {
+        c->local[i] = 0;
+        pthread_mutex_init(&c->llock[i], NULL);
+    }
+}
+
+// update: usually, just grab local lock and update
+// local amount; once local count has risen ’threshold’,
+// grab global lock and transfer local values to it
+void update(counter_t *c, int threadID, int amt) {
+    int cpu = threadID % NUMCPUS;
+    pthread_mutex_lock(&c->llock[cpu]);
+    c->local[cpu] += amt;
+    if (c->local[cpu] >= c->threshold) {
+        // transfer to global (assumes amt>0)
+        pthread_mutex_lock(&c->glock);
+        c->global += c->local[cpu];
+        pthread_mutex_unlock(&c->glock);
+        c->local[cpu] = 0;
+    }
+    pthread_mutex_unlock(&c->llock[cpu]);
+}
+
+// get: just return global amount (approximate)
+int get(counter_t *c) {
+    pthread_mutex_lock(&c->glock);
+    int val = c->global;
+    pthread_mutex_unlock(&c->glock);
+    return val; // only approximate!
+}
+```
+
+Approximate counters are more efficient than traditional counters:
+![image-20230315163859007](Concurrency & Thread.assets/image-20230315163859007.png)
+
+### concurrent linked list
+
+Without scaling:
+```c++
+typedef struct __node_t {
+    int key;
+    struct __node_t *next;
+} node_t;
+
+typedef struct __list_t {
+    node_t *head;
+    pthread_mutex_t lock;
+} list_t;
+
+void List_Init(list_t *L) {
+    L->head = NULL;
+    pthread_mutex_init(&L->lock, NULL);
+}
+
+int List_Insert(list_t *L, int key) {
+    pthread_mutex_lock(&L->lock);
+    node_t *new = malloc(sizeof(node_t));
+    if (new == NULL) {
+        perror("malloc");
+        pthread_mutex_unlock(&L->lock);
+        return -1; // fail
+    }
+    new->key = key;
+    new->next = L->head;
+    L->head = new;
+    pthread_mutex_unlock(&L->lock);
+    return 0; // success
+}
+
+int List_Lookup(list_t *L, int key) {
+    pthread_mutex_lock(&L->lock);
+    node_t *curr = L->head;
+    while (curr) {
+        if (curr->key == key) {
+            pthread_mutex_unlock(&L->lock);
+            return 0; // success
+        }
+        curr = curr->next;
+    }
+    pthread_mutex_unlock(&L->lock);
+    return -1; // failure
+}
+```
+
+Scaling: **hand-over-hand locking (lock coupling)**
+add a lock per node of the list, When traversing the list, the code first grabs the next node’s lock and then releases the current node’s lock
+
+### concurrent queue
+
+### concurrent hash table
+
+## Conditional variable
+
+ A condition variable is an explicit **queue** that threads can put themselves on when some state of execution (i.e., some **condition**) is not as desired (by **waiting** on the condition), some other thread, when it changes said state, can then wake one (or more) of those waiting threads and thus allow them to continue (by **signaling** on the condition). 
+
+Declare a conditional variable: `pthread_cond_t c`, 
+methods: `wait()` and `signal()`
+
+example: parent wait for child
+```c++
+int done = 0;
+pthread_mutex_t m = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t c = PTHREAD_COND_INITIALIZER; // conditional variable
+
+void thr_exit() {
+    Pthread_mutex_lock(&m);
+    done = 1;
+    Pthread_cond_signal(&c); // signal
+    Pthread_mutex_unlock(&m);
+}
+
+void *child(void *arg) {
+    printf("child\n");
+    thr_exit();
+    return NULL;
+}
+
+void thr_join() {
+    Pthread_mutex_lock(&m);
+    while (done == 0)
+        Pthread_cond_wait(&c, &m); // wait
+    Pthread_mutex_unlock(&m);
+}
+
+int main(int argc, char *argv[]) {
+    printf("parent: begin\n");
+    pthread_t p;
+    Pthread_create(&p, NULL, child, NULL);
+    thr_join();
+    printf("parent: end\n");
+    return 0;
+}
+```
+
+Wait & signal: 
+```c++
+pthread_cond_wait(pthread_cond_t *c, pthread_mutex_t *m); // also takes a lock as param
+pthread_cond_signal(pthread_cond_t *c);
+```
+
+`wait()` takes a lock as parameter: to release the lock and put the calling thread to sleep (atomically); when the thread wakes up (after some other thread has signaled it), it must re-acquire the lock before returning to the caller. 
+
+## Semaphore
+
+a single primitive for all things related to synchronization: both **locks** and **condition variables**
+
+**semaphore**: an object with a integer value, `sem_wait()`, `sem_post()`
+
+```c++
+int sem_wait(sem_t *s) {
+    decrement the value of semaphore s by one
+    wait if value of semaphore s is negative
+}
+
+int sem_post(sem_t *s) {
+    increment the value of semaphore s by one
+    if there are one or more threads waiting, wake one
+}
+```
+
+Binary semaphpore - lock
